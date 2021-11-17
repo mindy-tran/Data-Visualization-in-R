@@ -1,0 +1,188 @@
+---
+title: "BI 410 Problem Set 3"
+output: html_document
+---
+Credits: Mindy Tran
+Professor: Dr. Lauren Hallett
+DUE: 11/06/2021
+*Please submit as an html file and show all your work (i.e., do NOT put echo = FALSE in your chunk)*
+
+## 1) SPECIES RICHNESS WITH N-DEPOSITION 
+Check out  http://www.cedarcreek.umn.edu/research/experiments/e001
+
+#### i)  What did Clark and Tilman 2008 find? See text and Figure 1  
+**Q: What pattern did they observe between species richness and nitrogen treatment?**
+
+At higher N addition, diversity is lower. 
+There was higher species richness when the amount of nitrogen in the treatment was lower. As the mass of nitrogen increased, the relative species number decreased.
+
+**Q: What years and treatments did they include in Figure 1?**
+
+The years included were 1982 to 2004
+The treatments were 10, 34, and 95 kg of nitrogen per hectar per year.
+
+
+###WORKFLOW: Mimic Figure 1 (except on the y-axis just plot species richness).
+Metadata here: http://www.cedarcreek.umn.edu/research/data/dataset?ple001  
+
+#### ii) Within your group, write out the workflow you will use in English and ping one of us when done.
+**Data QAQC**\n
+Group by the first 7 columns and summarize the richness by the number of rows/species in that plot of land.\n
+Remove the miscellaneous litter, removing NA entries.\n
+
+In class:\n
+  1. Remove non-species and non-species entries. (misc litter)\n
+  2. Remove one of the control treatments for balance replication.\n
+  3. Remove any double counts (ex, when a line is entered twice during data entry).\n
+  4. Remove biomass values < 0 or NA.\n
+
+**Data manipulation**
+Plot species richness overtime with 3 different N treatments.\n
+Group by 7 cols, then group by year and plot, measure \n
+To calculate the mean and std error, within each year\n
+We plan on using a box plot for the species richness per year. Then, we will make separate columns for the average species richness and an additional column for standard error using the below function.\n
+
+
+In Class: \n
+  1. Calculate species richness within a replicate within the field, plot, year, NTrt. \n
+  2. Calculate the average and std error for species richness. Group by treatment/year. \n
+  3. Subset to keep only the years of interest, and then keep low, medium, and high to retain control.\n
+
+#### iii) After we have discussed as a class, write out and run the workflow in tidyverse R.
+Here's the data import to get you going:
+```{r}
+# load the tidyverse package
+library(tidyverse)
+
+# create a function to calculate standard error
+calcSE<-function(x){
+  x <- x[is.na(x)==F]
+  sd(x)/sqrt(length(x))
+}
+
+# read in the data as tibble
+cdrplant <- read_csv("e001_Plant aboveground biomass data.csv", skip = 726) %>% 
+
+## Data QAQC
+  # 1. Remove non-species and non-species entries.
+  filter(grepl('Miscellaneous|Fungi|Pine cones|Pine needles|', Species)) %>%
+  # 2. Remove one of the control treatments for balance replication. 
+  filter(NTrt != 9) %>% 
+  # 3. Remove biomass values < 0 or NA.
+  filter(!is.na(Biomass), Biomass > 0) %>% 
+  # 4. Remove any double counts (ex, when a line is entered twice during data entry).
+  select(-Biomass) %>% 
+  distinct() %>% 
+
+## Data manipulation
+  # 1. Calculate species richness within field, plot, year, NTrt, Nadd. Count num rows as an indicator of richness
+  group_by(Field, Plot, Year, NTrt, NAdd) %>% 
+  count() %>% 
+  # 2. Calculate the average and std error for species richness. Group by treatment/year.
+  group_by(NAdd, Year) %>% 
+  summarize(meanrich = mean(n), serich = calcSE(n)) %>% 
+  
+  # 3. Subset to keep only the years of interest, and then keep low, medium, and high to retain control.
+  # find at low, medium, and high: unique(cdrplant$NAdd)
+  filter(Year > 1981, Year < 2005,
+         NAdd == 0 | NAdd == 2.04 | NAdd == 9.52 | NAdd == 27.2) 
+
+## Graph it: Year vs meanrich, color lines by NTrt
+ggplot(cdrplant, aes(x=Year, color = as.factor(NAdd))) +
+  geom_line(aes(y=meanrich)) + 
+  geom_errorbar(aes(ymax = meanrich + serich, 
+                    ymin = meanrich - serich), width=.1) +
+  labs(title = "Species richness in Cedar Creek", 
+         color = "Nitrogen Added
+       (g/(m^2 year))",
+       x = "Year",
+       y="Mean species richness") # title and caption
+
+```
+
+## 2) C:N RATIOS WITH N-DEPOSITION
+Check out  http://www.cedarcreek.umn.edu/research/experiments/e001  
+
+#### i) What did Wedin and Tilman 1996 find? See text and Figure 7 
+The authors saw three things. At higher N addition, diversity is lower, C4 grasses are less abundant, and litter and root C:N ratios are lower.
+
+### WORKFLOW: Please make a graph of the ratio of C:N in aboveground biomass in response to the amount of nitrogen added by species. Include standard error bars around each plotted point.
+Unlike Wedin, these data are just from Field C, so no need to represent each field separately.  
+The sample sizes for some species and N levels are very low, please only include species that have at least 4 replicates in each of at least 3 nitrogen levels.  NOTE: It is okay to iteratively check this (e.g., plotting first and then identifying which species match these criteria)
+Metadata here: http://www.cedarcreek.umn.edu/research/data/dataset?nbe001
+
+#### ii) Write out the workflow you will use in English.
+**- What QAQC will you do beforehand? **
+
+1. Remove values < 0 or NA.
+2. Calculate the mean ratio of C:N (mutate)
+  - Look at it in relation to (aka group_by) amount of N and species
+3. Std error bars (calcSE)
+  - make column of average C:N for each species in each N-level
+4. Sample size is low, so include species with 4+ replicates in each 3 N-levels.
+  - group_by species/N-level and counting it up (add count column)
+  - filter: if there's not 4+ replicates, remove it
+  - make sure there are 3 levels of N
+
+
+**- How will you manipulate the data to create the graph?**
+ 1. After making sure the species are separate, make a line of the C:N ratios
+ 2. make the error bar
+ 3. make a legend/format the graph
+
+
+
+
+#### iii) Write out and run the workflow in tidyverse R.  
+Please comment your code. Here's the data import to get you going (uncomment the data import):
+```{r}
+cdrCN <- read_csv("e001_Plant aboveground biomass carbon and nitrogen.csv", skip = 491) %>% 
+## Data QAQC
+  # 1. Remove values < 0 or NA.
+  filter(!is.na(`% Carbon`), `% Carbon` > 0, !is.na(`% Nitrogen`), `% Nitrogen` > 0) %>%
+  unique() %>% 
+  # 2. Calculate the mean ratio of C:N (mutate)
+  # - Look at it in relation to (aka group_by) amount of N and species
+  group_by(Species, NAdd) %>% 
+  mutate(ratioCN = `% Carbon`/`% Nitrogen`) %>% 
+  # 3. Std error bars (calcSE)
+  # - make column of average C:N for each species in each N-level
+  mutate(mean_ratioCN = mean(ratioCN), se_ratioCN = calcSE(ratioCN)) %>%
+  group_by(Species, NAdd) %>% 
+  # 4. Sample size is low, so include species with 4+ replicates in each 3 N-levels.
+  # - group_by species/N-level and counting it up (add count column)
+  add_count(Species, NAdd, name = "numReplicates") %>% 
+  # - filter: if there's not 4+ replicates, remove it
+  filter(numReplicates >= 4) %>%
+      # An aside: look at interesting info
+  group_by(Species, NAdd, numReplicates, mean_ratioCN, se_ratioCN) %>% 
+  select() %>% unique() %>% ungroup() %>% 
+  unique() %>% 
+  # - make sure there are 3 levels of N
+  group_by(Species) %>% 
+  add_count(name = "num_NLevels") %>% 
+  filter(num_NLevels >= 3) %>% 
+  ungroup()
+
+# format the dataframe
+cdrCN[
+  order( cdrCN[,1], cdrCN[,2] ),
+]
+
+## Graph it
+ggplot(cdrCN, aes(x=NAdd, color = as.factor(Species))) +
+  # 1. After making sure the species are separate, make a line of the C:N ratios
+  geom_line(aes(y=mean_ratioCN)) + 
+  # 2. make the error bar
+  geom_errorbar(aes(ymax = mean_ratioCN + se_ratioCN, 
+                    ymin = mean_ratioCN - se_ratioCN), width=.1) +
+  # title and caption
+  labs(title = "C:N ratios with N deposition", 
+         color = "Species",
+       x = "Nitrogen Added(g/(m^2 year))",
+       y="Mean ratio C:N") 
+
+```
+
+**QUESTION: How does aboveground tissue C:N ratios change with N enrichment? Do patterns appear consistent across species?** \n
+Yes. but, the patterns are not consistent across the species. Most of the species experienced a sharp drop in C:N ratios with E. corolatta being the outlier. Also, comparing the 2.04 versus 5.44 g/(m^2 year) treatments, we see various changes in the C:N. Two species experienced a decrease in C:N while 3 had an increase in C:N. 

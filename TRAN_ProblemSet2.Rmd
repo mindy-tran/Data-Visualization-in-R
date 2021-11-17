@@ -1,0 +1,360 @@
+---
+title: "Problem Set 2"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+  word_document: default
+---
+
+### Name: Mindy Tran
+
+About this format: This problem set is saved as an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). To add a new R chunk click the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+**To submit: Please rename this file LASTNAME_ProblemSet2 and upload both the .Rmd and the final .html file to the assignments folder on Canvas**
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(lubridate)
+library(feasts)
+theme_set(theme_classic())
+data(mpg, package = "ggplot2")
+
+```
+### I. CO2 Trends
+First read in the data and get it ready to use
+You can find the data and read more about it here: <https://climate.nasa.gov/vital-signs/carbon-dioxide/>
+In particular, the metadata is at the top of the txt file if you click on the Download Data button
+
+Helpful hint: CO2 is changing over time, but also changes cyclically throughout the year. Consequently, the data are reported both for monthly values and "deseasonalized" values that remove the seasonal trend. Think about how you would use this to look at trends over long time periods, and also to isolate the strength of the monthly effect.
+
+To get you started here's the code to read in the data and give it better column names
+
+```{r}
+# library data.table allows you to read files directly from the internet
+# install.packages("data.table")
+library(data.table)
+
+# Let's skip down to the data, which starts at line 72
+CO2data <- fread('ftp://aftp.cmdl.noaa.gov/products/trends/co2/co2_mm_mlo.txt', skip = 71)
+
+# give descriptive but short names
+names(CO2data) <- c("year", "month", "decimalDate", "monthlyCO2", "deseasonalizedCO2",  "numberDays", "stddev", "uncertainty")
+
+
+```
+
+
+1. Read about the data   
+Why are there two different columns for CO2? Where do the data come from? What does numberDays refer to? What does -9.99 in the stddev column and -1 in the number of days column mean?
+**One column is for monthly CO2 values corrected based on the average seasonal cycle. Deseasonalized CO2 centered to remove seasonal effect. **
+**numberDays refers to missing days. There is some missing information for the numberDays and stddev which was taken from SIO from 1958-1974. So, the -9.99 in the stddev column and -1 in the number of days column indicate this missing information and is a sort of placeholder.**
+
+2. Visualize the data: How do atmospheric CO2 concentrations change over the time series?
+**The atmospheric [CO2] increases over time.**
+
+a. Describe your process: What category of graph will you use? What statistical transformation will you use? Does the underlying data differ if you use the monthly or deseasonalized columns? Does the statistical transformation differ if you use the monthly or deseasonalized columns?  
+**I wanted to use geom_line() from ggplot and also labs() to create labels. The underlying data is unchanged when using monthly or deseasonalized CO2, but switching between the two in the transformation changes since you are plotting different things.**
+
+b. Graph it:  
+```{r}
+ggplot(CO2data, aes(x=decimalDate, y=monthlyCO2)) + 
+  geom_line() + 
+  labs(x="Date", y="monthlyCO2") +
+  geom_smooth(method = "loess", se=F)
+
+```
+
+```{r}
+ggplot(CO2data, aes(x=decimalDate, y=deseasonalizedCO2)) + 
+  geom_line() + 
+  labs(x="Date", y="deseasonalizedCO2") +
+  geom_smooth(method = "loess", se=F)
+
+```
+
+3. Visualize the data: Which months are the CO2 values at the maximum? Minimum? Why is this?  
+**May has the maximum CO2 value and September/October has the minimum. During early spring, CO2 is released through respiration resulting in a CO2 bloom that peaks in May. Conversely, the fall season occurs after summer, when there is a peak in photosynthesis and CO2. Thus, the minimum [CO2] is during early fall.**
+**Source: https://airs.jpl.nasa.gov/resources/122/watching-earth-breathe-the-seasonal-vegetation-cycle-and-atmospheric-carbon-dioxide/**
+
+
+a. Describe your process: What category of graph will you use? What statistical transformation will you use?  
+**I used a box plot. On the y-axis, I put the difference between the monthly and deseasonalized CO2 to remove the difference between 1960 and 2020. The amount of variation between the long-term trend (highlighted in the deseasonalizedCO2) and the actual amount of CO2 should be similar between 1960 and 2020. CO2 levels have risen since data collection started, and I want to isolate the trend of CO2 values over the course of a general year. **
+**Before the workday on Oct 19th, I tried making the data frame object into a time series object. The time series plots in the link below looked interesing, and I really wanted to see if I could do them for CO2data. But, this took a lot of time and research, and I still couldn't get it right. So, I took a break and followed the in class method with the box plot. <http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html#Box%20Plot> **
+
+b. Graph it:  
+```{r echo = T, results = 'hide'}
+# Method 1: I tried to make CO2 dataframe into time series
+
+# convert decimalDate format and rename temporarily
+#CO2data$decimalDate <- as.Date(format(date_decimal(CO2data$decimalDate), "%Y-%m-%d"))
+#names(CO2data) <- c("year", "month", "Date", "monthlyCO2", "deseasonalizedCO2",  "numberDays", "stddev", "uncertainty")
+
+# Plot seasonal daa
+#ggseasonplot(x=CO2data) + labs(title="Seasonal plot")
+
+
+# Method 2: construct the ggplot from a long data format.
+
+#ggplot(CO2data, aes(x=Date)) + 
+#  geom_line(aes(y=monthlyCO2, col=variable)) + 
+#  labs(title="Time Series of Returns Percentage", 
+#     subtitle="Drawn from Long Data format", 
+#       caption="Source: Economics", 
+#       y="Returns %", 
+#       color=NULL) +  # title and caption
+#  scale_x_date(labels = lbls, breaks = brks) +  # change to monthly ticks and labels
+#  scale_color_manual(labels = c("psavert", "uempmed"), 
+#                     values = c("psavert"="#00ba38", "uempmed"="#f8766d")) +  # line color
+#  theme(axis.text.x = element_text(angle = 90, vjust=0.5, size = 8),  # rotate x axis text
+#        panel.grid.minor = element_blank())  # turn off minor grid
+```
+
+Here is what worked for me:
+
+```{r}
+# Working method
+ggplot(CO2data, aes(x=as.factor(month), y=(monthlyCO2-deseasonalizedCO2))) +
+  geom_boxplot(aes(group = cut_width(month, 0.25)), outlier.alpha = 0.1) + 
+    labs(title="Box plot", 
+         subtitle="MontlyCO2 per Month",
+         caption="Source: mpg",
+         x="Months",
+         y="CO2 amount")
+
+```
+
+
+### II. Temperature trends
+First we'll read in the data and get it ready to use
+You can find the data and read about it here: https://climate.nasa.gov/vital-signs/global-temperature/
+
+```{r}
+tempdata <- fread('http://climate.nasa.gov/system/internal_resources/details/original/647_Global_Temperature_Data_File.txt')
+
+```
+
+1. Read about the data
+What information is in each of the three columns? Where do the data come from? Using the names() function to give tempdata descriptive column headings
+
+**From left to right, the columns are Year, No_Smoothing, and Lowess. The No_Smoothing column shows the unadjusted annual mean for the global temperature. The Lowess column fits the data to a line through a time-based plot like tempdata. The data comes from NASA's Goddard Institute for Space Studies (GISS).**
+
+```{r}
+names(tempdata) <- c("year", "No_Smoothing", "Lowess")
+head(tempdata)
+```
+
+2. Visualize the data
+a. Recreate the graph on the website using all three columns
+```{r}
+
+ggplot(tempdata, aes(x=year)) + 
+  geom_line(aes(y=Lowess, color = "Lowess smoothing")) + 
+  geom_line(aes(y=No_Smoothing, color = "Annual Mean")) +
+  geom_point(aes(y=No_Smoothing), shape = 1, size=2, color = "gray") +
+  scale_color_manual(values = c(
+    'Lowess smoothing' = 'black',
+    'Annual Mean' = 'gray')) +
+  labs(title="GLOBAL LAND-OCEAN TEMPERATURE INDEX", 
+       subtitle="Data source: NASA's Goddard Institute for Space Studies (GISS).
+          Credit: NASA/GISS", 
+       color = "Legend",
+       y="Temperature Anomaly (C)") # title and caption
+  
+```
+
+
+b. Recreate the graph on the website using two columns and a statistical transformation
+```{r}
+ggplot(tempdata, aes(x=year, y=No_Smoothing)) + 
+  geom_line(color = "gray") +
+  geom_smooth(method="loess", se=F, color = "black") +
+  geom_point(aes(y=No_Smoothing), shape = 1, size=2, color = "gray") +
+  labs(title="GLOBAL LAND-OCEAN TEMPERATURE INDEX", 
+       subtitle="Data source: NASA's Goddard Institute for Space Studies (GISS).
+          Credit: NASA/GISS", 
+       color = "Legend",
+       y="Temperature Anomaly (C)") # title and caption
+
+```
+
+
+### III. Ice sheets
+Have a look at the following data, and read it into R 
+Either use fread() in library(data.table) to read it from the web, or read.csv() 
+
+Data description: http://climate.nasa.gov/vital-signs/land-ice/
+Raw data file: http://climate.nasa.gov/system/internal_resources/details/original/499_GRN_ANT_mass_changes.csv
+```{r}
+# Run the following to read the .csv from the web and rename columns
+icedat0 <- fread('http://climate.nasa.gov/system/internal_resources/details/original/499_GRN_ANT_mass_changes.csv')
+
+icedat <- icedat0[-c(1:10),]
+names(icedat) = c("year_decimal", "Greenlandmass_Gt", "Antarcticamass_Gt")
+icedat$year_decimal <- as.numeric(icedat$year_decimal)
+icedat$Greenlandmass_Gt <- as.numeric(icedat$Greenlandmass_Gt)
+icedat$Antarcticamass_Gt <- as.numeric(icedat$Antarcticamass_Gt)
+```
+
+
+1. Describe the data set: What are the columns and units? Where do the numbers come from? What is the uncertainty in measurement? 
+**The data set includes ice mass measurements by NASA's GRACE satellites. The columns (from left to right) is Time by decimal year, Greenland's ice mass in Gigatonnes, and Antarctica's ice mass in Gigatonnes. There are measurements for Antarctica and Greenland.**
+**There is some uncertainty due to unrecorded data from June 11, 2017 to July 13, 2018, which was from a gap between missions.**
+
+2. Plot the data and describe the trends you observe.
+**The ice mass in both locations have been decreasing since the data collection began and until it ended at the end of 2014. Also, the rate that Greenland is losing ice mass is greater than Antarctica.**
+
+```{r}
+ggplot(icedat, aes(x= year_decimal)) +
+  geom_line(aes(y=Greenlandmass_Gt, color = "Greenland")) +
+  geom_smooth(aes(y=Greenlandmass_Gt, color = "Greenland"), method="lm", se=F, color = "grey") +
+  geom_line(aes(y=Antarcticamass_Gt, color = "Antarctica")) +
+  geom_smooth(aes(y=Antarcticamass_Gt, color = "Greenland"), method="lm", se=F, color = "grey") +
+  scale_color_manual(values = c(
+    'Greenland' = 'red',
+    'Antarctica' = 'blue')) +
+  labs(title="MASS VARIATION SINCE 2002", 
+       color = "Legend",
+       subtitle="Data source: Ice mass measurement by NASA's GRACE satellites 
+       Note: Gap represents time between missions.
+       Credit: NASA",
+       y="Mass (Gt)",
+       x="Year") # title and caption
+
+```
+
+
+### IV. Sea level
+Have a look at the following data, and read it into R
+Either use fread() in library(data.table) to read it from the web, or read.table() if you download the data and save it as a .txt file. Consider using the skip argument to skip down to the data.
+
+Data description: http://climate.nasa.gov/vital-signs/sea-level/
+Raw data file: http://climate.nasa.gov/system/internal_resources/details/original/121_Global_Sea_Level_Data_File.txt
+```{r}
+# Run the following to read the .txt from the web and rename columns
+seadata <- fread('http://climate.nasa.gov/system/internal_resources/details/original/121_Global_Sea_Level_Data_File.txt', skip = 47)
+
+names(seadata) = c("altimeter", "cyclenum", "yeardecimal", "observnum", "weighted_obsvnum", "GMSL_nonGIA", "stdev_GMSL_nonGia", "smooth_GMSL_nonGia", "GMSL_GIA", "stdev_GMSL_Gia", "smooth_GMSL", "smooth_GMSL_rmsig")
+
+# head(seadata)
+```
+
+
+1. Describe the data set: What are the columns and units? Where do the numbers come from? What is the uncertainty in measurement?
+
+**From left to right: alimeter type, the merged file cycle number, the date in decimal-year form, the number of observations, number of weighted observations, GMSL (Global Isostatic Adjustment (GIA) not applied) variation (in mm),  standard deviation of GMSL (GIA not applied) variation (in mm), the smoothed GMSL (GIA not applied) variation (in mm), GMSL (GIA applied) variation (in mm),the standard deviation of GMSL (GIA applied) variation (in mm), the smoothed GMSL (GIA applied) variation (in mm), the smoothed GMSL (GIA applied) variation (in mm) WITH the annual and semi-annual signal removed.**
+
+**The Global Mean Sea Level (GMSL) numbers come from the "NASA Goddard Space Flight Center" and is from the Integrated Multi-Mission Ocean Altimeter Data for Climate Research. To make the data record consistent (since different instruments are used), the GMSL combines the sea level measurements "to a common terrestrial reference frame with all inter-mission biases, range and geophysical corrections applied and placed onto a georeferenced orbit." (Beckley, et al. 2010). **
+
+**The uncertainty shown in the standard deviation. In the webpage for "Sea Level", the graph shows a solid black line and a faint blue highlight around the black line. The blue line shows the amount of error and that the uncertainty is consistently one value**
+
+2. Plot the data and describe the trends you observe.
+**Overall, sea levels are increasing and have been increasing since the start of the data collection. Also within a year, there is a cyclical-like line showing that the sea levels vary based on the time of year.**
+
+
+```{r}
+# Global Mean Sea Level (GMSL) to linear trendline
+ggplot(seadata, aes(x= yeardecimal)) +
+  geom_line(aes(y=GMSL_GIA), color = "black") +
+  geom_smooth(aes(y=GMSL_GIA), method = "lm") +
+  labs(title="Global Mean Sea Level (GMSL)",
+       subtitle="Data source: Satellite sea level observations.
+       Credit: NASA's Goddard Space Flight Center",
+       y="GMSL variations (mm)",
+       x="Year") # title and caption
+
+#over one year
+ggplot(seadata, aes(x= yeardecimal)) +
+  geom_line(aes(y=GMSL_GIA), color = "black") +
+  geom_smooth(aes(y=GMSL_GIA)) +
+  scale_x_continuous(limits = c(2000, 2001)) +
+  labs(title="Global Mean Sea Level (GMSL)",
+       subtitle="Data source: Satellite sea level observations.
+       Credit: NASA's Goddard Space Flight Center",
+       y="GMSL variations (mm)",
+       x="Year") # title and caption
+
+# Global Mean Sea Level (GMSL) with std deviation highlighted
+ggplot(seadata, aes(x= yeardecimal)) +
+  geom_line(aes(y=GMSL_GIA)) +
+  geom_ribbon(aes(y = GMSL_GIA, ymin = (GMSL_GIA - (0.5*stdev_GMSL_Gia)), ymax = (GMSL_GIA + (0.5*stdev_GMSL_Gia))), alpha = .2) +
+  labs(title="Global Mean Sea Level (GMSL) with std deviation",
+       subtitle="Data source: Satellite sea level observations.
+       Credit: NASA's Goddard Space Flight Center",
+       y="GMSL variations (mm)",
+       x="Year") # title and caption
+
+# smooth_GMSL vs smooth_GMSL signal removed
+ggplot(seadata, aes(x= yeardecimal)) +
+  geom_line(aes(y=smooth_GMSL, color = "Smoothed GMSL")) +
+  geom_line(aes(y=smooth_GMSL_rmsig, color = "Smoothed GMSL, 
+                annual and semi-annual signal removed")) +
+  labs(title="Smoothed GMSL vs Smooth GMSL with signal removed",
+       subtitle="Data source: Satellite sea level observations.
+       Credit: NASA's Goddard Space Flight Center",
+       color = "Legend",
+       y="Smoothed GMSL variation (mm)",
+       x="Year") # title and caption
+
+
+```
+
+
+### V. Longer term CO2 trends
+Have a look at the following data, and read it into R
+Either use fread() in library(data.table) to read it from the web, or read.table() if you download the data and save as a .txt file. 
+
+Description of data set: https://cdiac.ess-dive.lbl.gov/trends/co2/vostok.html
+Data source: https://cdiac.ess-dive.lbl.gov/ftp/trends/co2/vostok.icecore.co2
+```{r}
+# Run the following to read the .txt from the web and rename columns
+longCO2 <- fread('https://cdiac.ess-dive.lbl.gov/ftp/trends/co2/vostok.icecore.co2', skip = 16)
+
+names(longCO2) = c("depth", "age_of_ice", "mean_air_age", "CO2conc")
+
+head(longCO2)
+```
+
+1. Describe the data set: What are the columns and units? Where do the numbers come from? 
+**From left to right, the columns are: the ice depth (m), age of the ice (year BP) mean age of the air (year BP), and CO2 concentration (ppmv).**
+**The data comes from the Historical CO2 Record from the Vostok Ice Core. During a collaborative project, Russia, the US, and France "yielded the deepest ice core ever recovered" (Barnola, et. al, 2003).**
+
+
+2. Plot the data and describe the trends you observe. Please both assess the relationship between depth and age, and between those variables and CO2. If you would like to reverse the order on the x axis (so that values go from deep to shallow and old to young), add the following to the ggplot line: + scale_x_continuous(trans = "reverse")
+**As we go deeper into the ice core, the older the ice is.**
+**Looking at the relationship between depth and CO2 concentrations, as well as the age of the ice and CO2 concentrations, we see that the CO2 concentrations follow a cyclical pattern. Also, the cyclical trend in [CO2] "are similar for each glacial cycle" (Barnola, et. al, 2003). **
+
+
+```{r}
+ggplot(longCO2, aes(x= depth)) +
+  geom_line(aes(y=age_of_ice), color = "black") + 
+  scale_x_continuous(trans = "reverse") +
+  labs(title= "Ice Depth vs Age of Ice",
+       subtitle="Data source: Historical CO2 Record from the Vostok Ice Core.
+       Credit: Barnola, J.-M., D. Raynaud, C. Lorius, and N.I. Barkov. 2003.",
+       y="Age of Ice (yr BP)",
+       x="Depth (m)") # title and caption
+
+
+ggplot(longCO2, aes(x= age_of_ice)) +
+  geom_line(aes(y=CO2conc), color = "black") +
+  scale_x_continuous(trans = "reverse") +
+  labs(title="Age of Ice vs [CO2]",
+       subtitle="Data source: Historical CO2 Record from the Vostok Ice Core.
+       Credit: Barnola, J.-M., D. Raynaud, C. Lorius, and N.I. Barkov. 2003.",
+       y="[CO2] (ppmv)",
+       x="Age of Ice (yr BP)") # title and caption
+
+ggplot(longCO2, aes(x= depth)) +
+  geom_line(aes(y=CO2conc), color = "black")+ 
+  scale_x_continuous(trans = "reverse") +
+  labs(title="Depth vs [CO2]",
+       subtitle="Data source: Historical CO2 Record from the Vostok Ice Core.
+       Credit: Barnola, J.-M., D. Raynaud, C. Lorius, and N.I. Barkov. 2003.",
+       y="[CO2] (ppmv)",
+       x="Depth (m)") # title and caption
+
+
+```
+
