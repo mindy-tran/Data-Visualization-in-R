@@ -1,0 +1,363 @@
+---
+title: "Regulation of opioid receptors and endogenous peptides in the habenula."
+author: "Mindy Tran"
+date: "12/08/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+bibliography: biblio.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(cowplot)
+library(knitr)
+library(DT)
+```
+
+Cleaned up version.
+
+# Introduction
+
+Drug overdose represents the leading cause of accidental death in the United States [@mcLaughlin_2017]. Specifically, opioids are a highly addictive narcotic that are prescribed for pain management but, when abused, can lead to dependence and overdose[@chetna_2014]. There are numerous factors that impact an individual’s risk for dependence, and genetic studies of opioid use suggest that drug use is heritable [@chetna_2014]. There is specific interest in the habenula as it has been linked to neuropsychiatric disorders like addiction and depression [@velasquez_2014], [@mcLaughlin_2017], [@li_2013], [@darcq_2012], [@sivalingam_2020]. Drug withdrawal syndromes and aversive states like anxiety and depression share similar physiological manifestations in the habenula. The signaling is linked to reward pathways that include the habenula [@mcLaughlin_2017], thus making the habenula a target to understand the effects of drugs of abuse on the brain [@velasquez_2014].  
+As for opioid binding sites, the opioid receptor gene family includes Oprm1, Oprd1, Oprk1. The endogenous ligands for the opioid receptors form the opioid peptide family and are produced by proteolytic cleavage of three large protein precursors, preproenkephalin (Penk), preprodynorphin (Pdyn), and proopiomelanocortin (Pomc) [@merrer_2009]. Here, I hope to use data from the Sylwestrak Lab study how chronic morphine use impacts gene expression in the habenula.  
+
+In 2015, Mocosko et al. published a paper on a method for Droplet-based single cell sequencing. They created an atlas of gene expression for known and novel candidate mouse retinal subtypes for their dataset [@macosko_2015]. This workflow to identify cell populations can be applied to my mice habenula data. A 2018 paper from Pandey et al. also used single single-cell RNA sequencing data to identify dozens of new marker genes that define habenular neuronal types in zebrafish [@pandey_2018]. More recently, single-cell RNA sequencing data has been used to determine gene markers for different anatomical regions of the habenula in mice. Specifically, Tac2 and corresponds to the MHb, Gap43 and corresponds to the LHb [@wallace_2020]. Recently, a paper from 2020 identified cell-type markers for different brain cell types and habenula cell subtypes [@hashikawa_2020]. The markers include:  
+- Opalin and Mog marked oligodendrocyte clusters  
+-	Slc4a4 and Ntsr2 marked astrocyte clusters  
+-	Pdgfra, Gpr17, or Ccnd1 marked oligodendrocyte precursor cells (OPCs)  
+-	Tmem119 and C1qc marked microglia  
+-	Tagln marked the mural cell cluster  
+-	Cldn5 and Flt1 marked the endothelial cells  
+-	Fam216b marked ependymal cluster  
+
+To address the problem of opioid use and gene expression in the habenula, one study looked at βCaMKII, a kinase that influences the expression and delivery of glutamate receptor GluR1-type AMPAR. The study saw that the kinase may be powerful regulator of LHb neuron function and that βCaMKII is up-regulated in the LHb of animal models of depression [@li_2013]. Another study saw that mu opioid receptor-RSK2 signaling in the habenula contributes to morphine analgesia, or the absense of pain, and down-regulation of Ser/Thr kinase RSK2 resulted in reduced analgesia [@darcq_2012].  
+
+Overall, past work to study the habenula has offered insight into the mechanisms that drive neuropsychiatric disorders like addiction and depression. I hope to also study the genes related to opioid receptors, endogenous ligands, and their expression in the Sylwestrak Lab's animal model of addiction. The data I will use is droplet-based single-cell RNA sequencing data. I will compare the gene expression of the control experiment with saline injections, and experiment with morphine injections in mice. Analysis of this data can provide insight into how different neuronal clusters or populations in the habenula drive morphine addiction. I hope to address the affect of chronic morphine use on gene expression in the opioid-related genes. Which cell types show enriched expression of these genes? I predict that the opioid receptor genes (Oprm1, Oprd1, Oprk1) and the endogenous peptides (Penk, Pdyn, POMC) will be up-regulated in our animal model of addiction compared to the control.  
+
+
+# Approach/Methods
+
+The data comes out of the Emily Sylwestrak Lab. Before single-cell RNA sequencing, the mice were perfused before the brain was dissected out. With a vibratome, samples of the habenula were taken in slices and chilled. From the slices, the habenula sections were punched out and enzymatically digested. The habenula sections were dissociated and resuspended, resulting in a concentrated solution of cells. The concentrated cells, were counted with a hemocytometer. Then, 10XGenomics actually does the single-cell mRNA-sequencing (ssRNA seq) library preparation. One of the datasets come from mice that had saline injections and the other will be from mice that had chronic morphine injections.  
+
+For the analysis in R, I used tutorials from the Satija lab [@compareStim_2019] [@guidedTut_2021]. I will determine which cells and cell populations have high expression of the genes of interest. Also, I will see how the expression differs between the saline and morphine datasets. With violin plots, I will study how chronic morphine use influences the expression of opioid-related genes. With UMAP plots, I hope to visualize and the change in gene expression for individual cell clusters.  
+
+**Setup the Seurat objects**  
+Here, we set read in the data with the Read10x() function to get a matrix with the amount of each gene for each cell. Then, CreateSeuratObject() is used as a container to hold the data of the saline and morphine data. Afterwards, I subset the data based on total number of molecules detected within a cell (between 600 and 2400) an percentage of mitocondrial (mt) RNA, which I want to be less than 2%. If a cell has a high percentage of mitocondrial RNA, it is likely that that the droplet had the RNA of a lysed cell. So, we want to remove the droplets that do not have a viable cell or that have the RNA of a lysed cell.  
+
+Then, I normalize the data and use FindVariableFeatures() to determine a subset of genes have high variation between cells. The genes are highly-expressed in some cells and lowly expressed in others.
+
+```{r setupObj, echo=FALSE, include=FALSE}
+ctrl.data <-Read10X(data.dir = "./saline")
+stim.data <-Read10X(data.dir = "./morphine")
+
+
+# Set up control object
+ctrl <- CreateSeuratObject(counts = ctrl.data, project = "20211013_HbSaline", min.cells = 3, min.features = 200)
+ctrl[["percent.mt"]] <- PercentageFeatureSet(ctrl, pattern = "^MT-")
+ctrl$stim <- "CTRL"
+ctrl <- subset(ctrl, subset = nFeature_RNA > 600 & nFeature_RNA < 2400 & percent.mt < 2)
+ctrl <- NormalizeData(ctrl, normalization.method = "LogNormalize", scale.factor = 10000)
+ctrl <- FindVariableFeatures(ctrl, selection.method = "vst", nfeatures = 2000)
+
+# Set up stimulated object
+stim <- CreateSeuratObject(counts = stim.data, project = "20211013_HbMorphine", min.cells = 3, min.features = 200)
+stim[["percent.mt"]] <- PercentageFeatureSet(stim, pattern = "^MT-")
+stim$stim <- "STIM"
+stim <- subset(stim, subset = nFeature_RNA > 600 & nFeature_RNA < 2400 & percent.mt < 2)
+stim <- NormalizeData(stim, normalization.method = "LogNormalize", scale.factor = 10000)
+stim <- FindVariableFeatures(stim, selection.method = "vst", nfeatures = 2000)
+
+```
+
+**Perform integration and integrated analysis**  
+First, FindIntegrationAnchors() and IntegrateData() integrates the control and morphine datasets together. 
+Now we can run a single integrated analysis on all cells.
+First, I scaled the data before using RunPCA() to perform principal component analysis. With FindNeighbors() and FindClusters(), I place cells with similar gene expression together. RunUMAP() uses this output for the non-linear dimensional reduction.
+
+```{r integratedAnalysis, include=FALSE, warning=FALSE}
+chronic.anchors <- FindIntegrationAnchors(object.list = list(ctrl, stim), dims = 1:10)
+chronic.combined <- IntegrateData(anchorset = chronic.anchors, dims = 1:10)
+DefaultAssay(chronic.combined) <- "integrated"
+
+
+all.genes <- rownames(chronic.combined)
+chronic.combined <- ScaleData(chronic.combined, features = all.genes)
+
+chronic.combined <- RunPCA(chronic.combined, features = VariableFeatures(object = chronic.combined))
+
+chronic.combined <- FindNeighbors(chronic.combined, dims = 1:10)
+chronic.combined <- FindClusters(chronic.combined, resolution = 0.5)
+chronic.combined <- RunUMAP(chronic.combined, dims = 1:10)
+
+```
+
+
+**Identify conserved cell type markers**  
+Now, to identify the clusters, I need to find the marker genes for in each cluster. Here, I displayed the top 5 genes in each cluster.
+
+```{r FindAllMarkers, include=FALSE}
+DefaultAssay(chronic.combined) <- "RNA"
+cluster.markers <- FindAllMarkers(chronic.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+
+```{r FindAllMarkers1, echo=FALSE, warning=FALSE}
+DT::datatable(cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC))
+```
+
+**Assigning cell type identity to clusters**  
+Now, I need to find out cluster identities of all the cells in the tissue sample. I will look for gene markers in the different clusters and label those clusters with the appropriate cell-type name.
+
+I use the published gene markers to determine the cluster identity [@hashikawa_2020]. 
+
+```{r AssignID, echo=FALSE}
+# Oligodendrocyte
+oligodenTable <- cluster.markers %>% 
+  filter(substr(gene, 1, 4) == "Olig" | gene == "Mog" | gene == "Opalin"| gene == "Gpr17") %>% 
+  summarize(p_val, cluster, gene)
+
+oligodenClusters <- oligodenTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>% 
+  unique() %>% 
+  mutate(cell_type = "Oligodendrocyte")
+
+
+# Microglia
+microgliaTable <- cluster.markers %>% 
+  filter(gene == "Cx3cr1" | gene == "Tmem119" | gene == "C1qc") %>% 
+  summarize(p_val, cluster, gene)
+microgliaClusters <- microgliaTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>% 
+  unique() %>% 
+  mutate(cell_type = "Microglia")
+
+# Ependymal
+ependymalTable <- cluster.markers %>% 
+  filter(gene == "Hdc" | gene == "Foxj1"| gene == "Fam216b") %>% 
+  summarize(p_val, cluster, gene)
+ependymalClusters <- ependymalTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>% 
+  unique()%>% 
+  mutate(cell_type = "Ependymal")
+
+# Astrocyte
+astrocyteTable <- cluster.markers %>% 
+  filter(gene == "Slc6a11" | gene == "Tmem119"| gene == "C1qc") %>% 
+  summarize(p_val, cluster, gene)
+astrocyteClusters <- astrocyteTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>% 
+  unique() %>% 
+  mutate(cell_type = "Astrocyte")
+
+# OPC
+opcTable <- cluster.markers %>% 
+  filter(gene == "Gpr17"| gene == "Pdgfra"| gene == "Ccnd1") %>% 
+  summarize(p_val, cluster, gene)
+opcClusters <- opcTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>% 
+  unique() %>% 
+  mutate(cell_type = "OPC")
+
+# Mural
+muralTable <- cluster.markers %>% 
+  filter(gene == "Tagln") %>% 
+  summarize(p_val, cluster, gene)
+muralClusters <- muralTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>% 
+  unique() %>% 
+  mutate(cell_type = "Mural")
+
+# Endothelial
+endothelialTable <- cluster.markers %>% 
+  filter(gene == "Cldn5" | gene == "Flt1") %>% 
+  summarize(p_val, cluster, gene)
+endothelialClusters <- endothelialTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>%  
+  unique() %>% 
+  mutate(cell_type = "Endothelial")
+
+# Neuron
+neuronTable <- cluster.markers %>% 
+  filter(gene == "Tac2" | gene == "Slc17a6"| gene == "Slc17a6"| gene == "Snap25") %>% 
+  summarize(p_val, cluster, gene)
+neuronClusters <- neuronTable %>% 
+  group_by(cluster) %>% 
+  select(cluster) %>%  
+  unique() %>% 
+  mutate(cell_type = "Neuron")
+
+clusterIdentities <- rbind(oligodenClusters, microgliaClusters, ependymalClusters, astrocyteClusters, opcClusters, muralClusters, endothelialClusters,neuronClusters)
+
+ordered_clusterIdentities <- clusterIdentities[order(clusterIdentities$cluster),]
+```
+
+
+```{r AssignID1, echo=FALSE}
+DT::datatable(ordered_clusterIdentities)
+```
+
+Now, based on the gene markers, I determine the cell-type identity of the clusters and visualize the clusters. To save space in my environment, I removed the tables that I do not need anymore.
+
+```{r rename, include=TRUE, fig.cap="Figure 1: Unnamed cell clusters"}
+### Visualize your named clusters
+DimPlot(chronic.combined, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+```
+
+
+```{r rename1, include=FALSE}
+# Then, I replace the numerical names for the clusters with the ID names.
+chronic.combined <- RenameIdents(chronic.combined, `0` = "Neuron1", `1` = "Neuron2",`2` = "Neuron3", `3` = "Astrocyte", `4` = "Neuron4", `5` = "Ependymal", `6` = "Oligodendrocyte1", `7` = "Neuron5", `8` = "Microglia/Astrocyte", `9` = "Oligodendrocyte2", `10` = "Oligodendrocyte/OPC", `11` = "Astrocyte", `12` = "Endothelial", `13` = "Unk1", `14` = "Unk2")
+
+rm(astrocyteClusters, astrocyteTable,  endothelialClusters, endothelialTable, ependymalClusters, ependymalTable, microgliaClusters, microgliaTable, muralClusters, muralTable, oligodenClusters, oligodenTable)
+```
+
+
+```{r rename2, include=TRUE, fig.cap="Figure 2: Named cell clusters"}
+### Visualize your named clusters
+DimPlot(chronic.combined, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+```
+
+**Redoing all this with the Neuron clusters only**  
+Now, I can subset the neuron clusters and do that whole process again. Here, I visualize our neuronal clusters.
+
+```{r neuronclustering, include=FALSE}
+neurons <- subset(chronic.combined, subset = integrated_snn_res.0.5==0 | integrated_snn_res.0.5==1 | integrated_snn_res.0.5==2 | integrated_snn_res.0.5==4 | integrated_snn_res.0.5==7)
+
+neurons <- FindVariableFeatures(neurons, selection.method = "vst", nfeatures = 2000)
+neurons <- ScaleData(neurons, verbose = FALSE)
+neurons <- RunPCA(neurons, npcs = 30, verbose = FALSE)
+neurons <- RunUMAP(neurons, reduction = "pca", dims = 1:20)
+neurons <- FindNeighbors(neurons, reduction = "pca", dims = 1:20)
+neurons <- FindClusters(neurons, resolution = 0.5)
+```
+
+
+```{r neuronclustering1, echo=FALSE, fig.cap="Figure 3: Neuron Clusters"}
+DimPlot(neurons, label = TRUE)
+```
+
+  
+*Find markers for every cluster*  
+We can see the top 5 marker genes for the neuron cells. the two right columns show the cluster identity and the gene markers.  
+
+```{r neuronmarkers, echo=FALSE}
+## Find markers for every cluster 
+neurons.markers <- FindAllMarkers(neurons, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+## See the top 5 markers for each neuron cluster
+```
+
+
+```{r neuronmarkers1, echo=FALSE}
+DT::datatable(neurons.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC))
+```
+
+
+
+# Results
+
+### Identifying the Lateral and Medial Habenula clusters
+
+Using published habenula gene markers [@wallace_2020], I determined which clusters are from the medial and lateral habenula. The medial habenula (MHb) encompass clusters 2, 6, 7, 8 since the gene markers Tac2, Slc17a7, Slc17a6, and Snap25 are highly expressed together in these clusters.  
+
+The lateral habenula encompasses clusters 0, 3, 4, 5, 9, 10 since the gene markers Gap43, Snap25, and Slc17a6 are highly expressed together in these clusters.  
+
+```{r habenula, echo=FALSE, fig.cap="Figure 4: MHb marker genes", fig.show="hold", out.width="33%"}
+# MHb marker genes
+VlnPlot(neurons, features = c("Tac2", "Slc17a7", "Slc17a6", "Snap25"), pt.size = 0, combine = FALSE)
+```
+
+
+```{r habenula1, echo=FALSE, fig.cap="Figure 5: LHb marker genes", fig.show="hold", out.width="33%"}
+# LHb marker genes
+VlnPlot(neurons, features = c("Snap25", "Gap43", "Slc17a6"), pt.size = 0, combine = FALSE)
+```
+
+We can confirm what we see in the violin plots and see that the genes are localizing in certain clusters. When multiple marker genes are localizing in the same clusters, we can identify the medial habenula (MHb) as clusters 2, 6, 7, 8 and the lateral habenula as clusters 0, 3, 4, 5, 9, 10.
+
+```{r habenula2, echo=FALSE, fig.cap="Figure 6: Localization of habenula marker genes", fig.show="hold", out.width="50%"}
+# MHb = clusters 2, 6, 7, 8
+# LHb = 0, 3, 4, 5, 9, 10
+FeaturePlot(neurons, features = c("Tac2", "Slc17a7", "Slc17a6", "Snap25", "Gap43"), combine = FALSE,label = TRUE, pt.size = 0)
+```
+
+### Oprm1
+
+For the violin plots, for each identity, there is a left and right side. The left side is the control/saline dataset, and the right side is the chronic morphine dataset.  
+
+Looking at the opioid receptor genes, Oprm1 is upregulated in cluster 7. Looking at the output of the UMAP dimensional reduction technique, Oprm1 is highly expressed and upregulated in cluster 2 for the saline and morphine injections. 
+
+```{r oprm1, echo=FALSE, fig.cap="Figure 7: Oprm1 Localization", fig.show="hold", out.width="50%"}
+VlnPlot(neurons, features = c("Oprm1"), split.by = "stim", combine = FALSE, pt.size = .1)
+
+FeaturePlot(neurons, features = c("Oprm1"), split.by = "stim", label = TRUE)
+```
+
+### Oprk1
+
+From the violin plot, Oprk1 does not seem to have a drastic change in expression like Oprm1. Looking at the output of the UMAP dimensional reduction technique, Oprk1 is highly expressed in cluster 4.
+
+```{r oprk1, echo=FALSE, fig.cap="Figure 8: Oprk1 Localization", fig.show="hold", out.width="50%"}
+VlnPlot(neurons, features = c("Oprk1"), split.by = "stim", combine = FALSE, pt.size = .1)
+FeaturePlot(neurons, features = c("Oprk1"), split.by = "stim", label = TRUE)
+```
+
+### Oprd1 
+
+For the violin plot of Oprd1, it was not highly expressed in any of the clusters. 
+```{r oprd1, echo=FALSE, fig.cap="Figure 9: Oprd1 Localization", fig.show="hold", out.width="50%"}
+VlnPlot(neurons, features = c("Oprd1"), split.by = "stim", combine = FALSE, pt.size = .1)
+FeaturePlot(neurons, features = c("Oprd1"), label = TRUE)
+```
+
+### Endogenous peptides
+
+From the violin plots, there the clusters have a small number of individual cells that have high expression of the endogenous peptides genes. The overall expression is low in all clusters, which is why the plots are not recognizable as violin plots. 
+Looking at the output of the UMAP dimensional reduction technique:  
+- Pomc is highly expressed in cluster 5, seen in the UMAP plot. The violin plot shows more highly-expressing cells in clusters 0, 1, and 2. There are less highly-expressing cells in clusters 5, 6, 7, and 9.  
+- Penk has more highly-expressing cells in cluster 0 after chronic morphine use, but the expression level is lower after morphine use. It is upregulated in cluster 1, and down regulated in cluster 3.  
+- Pdyn is has more high-expressing cells in cluster 0.  
+- The highest expression level in all three is in cluster 3.  
+
+
+```{r Pomc, echo=FALSE, fig.cap="Figure 10: Pomc Localization", fig.show="hold", out.width="50%"}
+VlnPlot(neurons, features = c("Pomc"), split.by = "stim", pt.size = .1)
+FeaturePlot(neurons, features = c("Pomc"), split.by = "stim", label = TRUE)
+```
+
+
+```{r Penk, echo=FALSE, fig.cap="Figure 11: Penk Localization", fig.show="hold", out.width="50%"}
+VlnPlot(neurons, features = c("Penk"), split.by = "stim", pt.size = .1)
+FeaturePlot(neurons, features = c("Penk"), split.by = "stim", label = TRUE)
+```
+
+
+```{r Pdyn, echo=FALSE, fig.cap="Figure 12: Pdyn Localization", fig.show="hold", out.width="50%"}
+VlnPlot(neurons, features = c("Penk"), split.by = "stim", pt.size = .1)
+FeaturePlot(neurons, features = c("Pdyn"), split.by = "stim", label = TRUE)
+```
+
+
+# Discussion
+With this study, I hope to address the effect of chronic morphine use on gene expression in the opioid-related genes. I predicted that the opioid receptor genes (Oprm1, Oprd1, Oprk1) and the endogenous peptides (Penk, Pdyn, POMC) would be up regulated in our animal model of addiction compared to the control. The results show varying results within the lateral and medial habenula, implicating that the sub-populations in both structures hold differing functions in terms of driving addiction.   
+Looking at the expression of the opioid receptor genes by themselves (Fig. 7-9), the low expression of Oprd1 is not surprising because the delta receptor has low expression in the thalamus, where the habenula is, compared to the mu and kappa receptors [@merrer_2009]. For the endogenous peptides, Penk is found in areas that Oprm1 are located, and Pdyn is found in areas matching Oprk1 [@merrer_2009]. This is also seen there, where clusters 0 to 6 and 9 where there is a high expression level of Penk and Oprm1. Clusters 0 to 3, 6, 8, and 9 have high expression levels of Pdyn and Oprk1. This suggests that the datasets are viable and reliable to continue downstream analysis.  
+
+For the lateral habenula (LHb) clusters, there were varying results. Cluster 0 and 1 had an increase in the number of cells with high gene expression for the endogenous peptides. Conversely, in cluster 3, the endogenous peptides were down regulated. In cluster 4, Oprk1 is down regulated. Pomc is upregulated in cluster 5. For cluster 9, Oprm1 and the endogenous peptides were downregulated. For most clusters, there was an upregulation. Cluster 10 had very little expression of all the genes. There is a split in the lateral habenula clusters, suggesting that there are smaller populations within the LHb with differing functions in terms of driving addictive behaviors. The clusters that have upregulated gene expression are more similar to each other, as seen in the dimensional reduction plots, so they make up their own sub-cell type in the LHb. For the medial habenula (MHb) clusters, there were varying results again. Cluster 2 has upregulated Oprm1 and had the highest expression level of Oprm1 across all clusters. Cluster 2 also had a high expression of Pomc and upregulated endogenous peptides. In cluster 6, Oprm1, Oprk1, and the endogenous peptides are down regulated. Like in the LHb, this varation in gene expression suggests that there are smaller populations within the MHb that have differing functions to influence addictive behaviors. Clusters 0, 1, 2 and 5 had up regulated genes, suggesting these clusters allows the release of more dopamine, and may result in heightened feelings of pleasure [@chetna_2014].  
+
+In terms of limitations, the clearest one is the low expression levels. The expression of the opioid receptor and endogenous peptide genes are low across all neuron clusters. While there are individual cells that have high expression levels, the overall gene expression is low in all clusters. The expression was low enough to make the violin plots unrecognizable as violin plots. But the amount of RNA does not confer information about the protein levels in the cell. A cell with a low amount of opioid-related RNA could have high protein levels. That is a limitation to ssRNA sequencing data, it does not convey information about protein expression. With this in mind, I can still provide insight into the change in RNA expression level from chronic morphine use. A future direction could be using in situ hybridization [@wallace_2020] to assess the change in protein expression for these opioid receptor and endogenous peptide genes.  
+
+With this study, I hope to address the effect of chronic morphine use on gene expression in the opioid-related genes. I originally sought to see if the lateral and medial habenula as two wholes had a definitive upregulation or down regulation of the opioid-related genes. My original hypothesis was that the opioid receptor and endogenous peptides would be upregulated in the habenula in the model of addiction. But the data suggests that, within both the lateral and medial habenula, there are smaller populations with differing functions in terms of driving addiction. Adding to the current field, this study adds another dataset to further analyze the impact chronic morphine use has on gene expression in the habenula and suggests that there are cell populations within the habenula that impact the mechanisms that drive addiction.  
+
+
+# Bibliographies
