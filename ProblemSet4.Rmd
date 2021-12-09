@@ -1,0 +1,227 @@
+---
+title: "BI 410 Problem Set 4"
+output: html_document
+---
+Credits: Mindy Tran
+Professor: Dr. Lauren Hallett
+DUE: 11/18/2021
+*Please submit as an html file and show all your work (i.e., do NOT put echo = FALSE in your chunk)*
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#load the tidyverse
+library(tidyverse)
+
+# load the Portal Project Data
+surveys <- read_csv("surveys.csv")
+species <- read_csv("species.csv")
+plots <- read_csv("plots.csv")
+
+# function to calculate SE in case you need it!
+calcSE<-function(x){
+  x <- x[is.na(x)==F]
+  sd(x)/sqrt(length(x))
+}
+
+```
+
+
+## Creating workflows with the Portal Project
+For each of the following prompts, please:  
+
+a) Identify the information needed  
+b) Identify the datasets that have this information  
+c) Write the in-English workflow needed to go from raw data to question  
+d) Write the R code using tidyverse syntax to go from raw data to question. Note: it's good practice to comment your code with hashtags as you go. **I expect you to do this.** 
+
+**Please turn in your assignment as a rendered .html file that *shows your work*. i.e., leave echo = TRUE (the default)**
+
+### 1) How many plots of each type are there?   
+a) Information needed: plot types, occurences of each plot type recorded
+b) Datasets needed: plots, surveys
+c) English workflow:
+- Use the plot_id from "plots" dataset to match plot_id in "surveys" to a plot_type
+- Count how many rows are in each plot type and select unique values
+
+d) R workflow:
+```{r}
+# Use the plot_id from "plots" dataset to match plot_id in "surveys" to a plot_type
+tog <- right_join(plots, surveys)
+
+numTypes <- tog %>% 
+  group_by(plot_type) %>% 
+  add_count() %>% # Count how many rows are in each plot type and select unique values
+  select(plot_type, n) %>% 
+  unique()
+
+numTypes
+
+```
+
+
+### 2) What is the average weight across rodent species? 
+Hint: Averaging within a species first might account for bias from population size  
+
+a) Information needed: taxa to find rodents, species, weight, calcSE, mean
+b) Datasets needed: species, surveys
+c) English workflow:  
+- Join species and surveys datasets
+- find the average weight in each species
+- isolate rodents
+- find mean and SE of weight in Rodents
+
+d) R workflow:
+```{r}
+# Join species and surveys datasets
+tog <- right_join(species, surveys) 
+
+rodentWeight <- tog %>% 
+  filter(!is.na(weight)) %>% 
+  group_by(species)  %>% 
+  mutate(meanweight = mean(weight, na.rm = TRUE), seWeight = calcSE(weight)) %>% # find the average weight in each species
+  select(taxa, species, meanweight, seWeight) %>% 
+  unique() %>% 
+  filter(taxa == "Rodent") %>% # isolate rodents
+  unique() 
+
+print(rodentWeight, n = 22)
+
+```
+
+### 3) What percentage of the rodents captured in the Portal project control plots were in the genus Dipodomys?
+Hint: you might want to join two datasets into an intermediate dataframe to join to again
+
+a) Information needed: taxa for rodents, genus for Dipodomys, plot_type for control
+b) Datasets needed: surveys, species, and plots
+c) English workflow:  
+- join all datasets
+- count number of rodents in control plots
+- count number of Dipodomys in control plots
+- calculate the percentage of Dipodomys
+- hold unique values
+
+d) R workflow:
+```{r}
+
+tog <- right_join(species, surveys)
+tog <- left_join(tog, plots) # join all datasets
+
+percDipo <- tog %>% 
+  filter(plot_type == "Control", taxa == "Rodent") %>% 
+  add_count() %>% rename("numcontrol" = n) %>% # count number of rodents in control plots
+  filter(genus == "Dipodomys") %>% 
+  group_by(genus) %>% 
+  add_count() %>% rename("numDip" = n) %>% # count number of Dipodomys in control plots
+  select(genus, taxa, plot_type, numcontrol, numDip) %>% 
+  mutate(percentDipo = numDip/numcontrol * 100) %>% # calculate the percentage of Dipodomys
+  unique()%>% # hold unique values
+  select(genus, taxa, plot_type, percentDipo)
+
+percDipo
+  
+  
+```
+
+
+
+
+### 4) What are the minimum, maximum and average weight for each species of Rodent?
+a) Information needed: species, taxa, weight
+b) Datasets needed:  survey, species
+c) English workflow:  
+- join survey and species datasets
+- isolate rodents
+- group by species
+- find min, mean, max weight for each species
+
+
+d) R workflow:
+```{r}
+
+tog <- right_join(species, surveys) # join all datasets
+
+boxplotRodents <- tog %>%
+  filter(!is.na(weight)) %>% 
+  filter(taxa == "Rodent") %>% # isolate rodents
+  group_by(species)  %>% # group by species
+  # find min, mean, max weight for each species
+  mutate(minWeight = min(weight), maxWeight = max(weight), meanWeight = mean(weight)) %>% 
+  select(species, taxa, minWeight, maxWeight, meanWeight) %>% unique()
+  
+print(boxplotRodents, n = 22)
+```
+
+
+
+### 5) Is there a correlation between the average annual weights of the three Dipodomys species? Explore this visually.
+Hint: You may need to "untidy" the data  
+
+a) Information needed: weights, species_id, year, species
+b) Datasets needed: surveys, species
+c) English workflow:
+- join datasets
+- change columns to date y-m-d
+- isolate the Dipodomys
+- group by year/date and species
+- mutate annual weights and SE
+- unique values
+- graph
+
+d) R workflow:
+```{r}
+
+tog <- right_join(species, surveys) # join all datasets
+
+tog$Date<-as.Date(with(tog,paste(year,month,day,sep="-")),"%Y-%m-%d")
+
+yearWeight <- tog %>% 
+  filter(genus == "Dipodomys") %>% 
+  select(genus, species, year, Date, weight) %>% 
+  group_by(species, year) %>% 
+  mutate(meanweight = mean(weight, na.rm = TRUE), seweight = calcSE(weight)) %>%
+  select(genus, species, year, meanweight, seweight) %>% 
+  filter(species != "sp.") %>% 
+  unique()
+
+ggplot(yearWeight, aes(x = year, y= meanweight, color = species)) + geom_point() + geom_line() +
+  geom_errorbar(aes(ymin = meanweight - seweight, ymax = meanweight + seweight))
+
+
+```
+
+
+### 6) Using data from the Portal Project, please recreate the following figure. Please match the aesthetics of the figure as closely as possible (e.g., labels, colors, font and line size, axis-ticks, etc). 
+
+- isolate control plots
+- isolate Dipodomys spectabilis
+- group by year/date and species
+- mutate annual weights and SE
+- unique values
+- graph, color = sex
+
+![Average weight (+/- SE) of _Dipodomys spectabilis_ over time by sex in the control plots of the Portal Project.](DISP_weight.jpg)
+Figure 1. Average weight (+/- SE) of _Dipodomys spectabilis_ over time by sex in the control plots of the Portal Project.
+
+```{r}
+tog <- right_join(species, surveys)
+tog <- left_join(tog, plots) # join all datasets
+
+figdat <- tog %>% 
+  filter(plot_type == "Control", genus == "Dipodomys", species == "spectabilis", !is.na(weight), !is.na(sex)) %>% 
+  group_by(sex, year) %>% 
+  mutate(meanweight = mean(weight, na.rm = TRUE), seweight = calcSE(weight)) %>%
+  select(genus, species, sex, year, meanweight, seweight) %>%  unique()
+
+
+ggplot(figdat, aes(x = year, y= meanweight, color = sex)) + geom_point(size = .1) + geom_line(size = 1.2) +
+  scale_color_manual(values = c("orange", "blue")) +
+  geom_errorbar(aes(ymin = meanweight - seweight, ymax = meanweight + seweight)) + 
+  labs(x = "Year", y = "Average weight (g)", color = "Sex") +
+  theme_classic() +
+  scale_y_continuous(breaks = seq(80, 140, by = 20), labels = seq(80, 140, by = 20)) +
+   theme(text = element_text(size = 20)) 
+  
+
+
+```
